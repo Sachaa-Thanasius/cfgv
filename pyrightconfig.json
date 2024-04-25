@@ -1,0 +1,8 @@
+{
+    "include": [
+        "cfgv.py"
+    ],
+    "pythonVersion": "3.8",
+    "typeCheckingMode": "strict",
+    "reportUnnecessaryTypeIgnoreComment": "warning"
+}

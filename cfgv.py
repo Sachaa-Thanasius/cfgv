@@ -1,14 +1,57 @@
 from __future__ import annotations
 
-import collections
 import contextlib
 import os.path
 import re
 import sys
+from typing import Any
+from typing import Callable
+from typing import Generator
+from typing import Iterable
+from typing import NamedTuple
+from typing import Optional as TOptional
+from typing import overload
+from typing import Protocol
+from typing import Tuple
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from typing_extensions import Self, TypeAlias
+
+
+class _Schema(Protocol):
+    def check(self, v: object) -> None:
+        ...
+
+    def apply_defaults(self, v: object) -> Any:
+        ...
+
+    def remove_defaults(self, v: object) -> Any:
+        ...
+
+
+class _Validator(Protocol):
+    def check(self, dct: object) -> None:
+        ...
+
+    def apply_default(self, dct: object) -> Any:
+        ...
+
+    def remove_default(self, dct: object) -> Any:
+        ...
+
+
+_Check: TypeAlias = Callable[[object], None]
 
 
 class ValidationError(ValueError):
-    def __init__(self, error_msg, ctx=None):
+    @overload
+    def __init__(self, error_msg: str) -> None: ...
+    @overload
+    def __init__(self, error_msg: Self, ctx: str | None = None) -> None: ...
+
+    def __init__(self, error_msg: Self, ctx: str | None = None) -> None:
         super().__init__(error_msg)
         self.error_msg = error_msg
         self.ctx = ctx
@@ -23,12 +66,16 @@ class ValidationError(ValueError):
         return out
 
 
-MISSING = collections.namedtuple('Missing', ())()
-type(MISSING).__repr__ = lambda self: 'MISSING'
+class _Missing(NamedTuple):
+    def __repr__(self):
+        return 'MISSING'
+
+
+MISSING = _Missing()
 
 
 @contextlib.contextmanager
-def validate_context(msg):
+def validate_context(msg: str) -> Generator[None, Any, None]:
     try:
         yield
     except ValidationError as e:
@@ -37,16 +84,12 @@ def validate_context(msg):
 
 
 @contextlib.contextmanager
-def reraise_as(tp):
+def reraise_as(tp: type[Exception]) -> Generator[None, Any, None]:
     try:
         yield
     except ValidationError as e:
         _, _, tb = sys.exc_info()
         raise tp(e).with_traceback(tb) from None
-
-
-def _dct_noop(self, dct):
-    pass
 
 
 def _check_optional(self, dct):
@@ -158,76 +201,188 @@ def _warn_additional_keys_check(self, dct):
         self.callback(extra, self.keys, dct)
 
 
-Required = collections.namedtuple('Required', ('key', 'check_fn'))
-Required.check = _check_required
-Required.apply_default = _dct_noop
-Required.remove_default = _dct_noop
-RequiredRecurse = collections.namedtuple('RequiredRecurse', ('key', 'schema'))
-RequiredRecurse.check = _check_required
-RequiredRecurse.check_fn = _check_fn_recurse
-RequiredRecurse.apply_default = _apply_default_required_recurse
-RequiredRecurse.remove_default = _remove_default_required_recurse
-Optional = collections.namedtuple('Optional', ('key', 'check_fn', 'default'))
-Optional.check = _check_optional
-Optional.apply_default = _apply_default_optional
-Optional.remove_default = _remove_default_optional
-OptionalRecurse = collections.namedtuple(
-    'OptionalRecurse', ('key', 'schema', 'default'),
-)
-OptionalRecurse.check = _check_optional
-OptionalRecurse.check_fn = _check_fn_recurse
-OptionalRecurse.apply_default = _apply_default_optional_recurse
-OptionalRecurse.remove_default = _remove_default_optional_recurse
-OptionalNoDefault = collections.namedtuple(
-    'OptionalNoDefault', ('key', 'check_fn'),
-)
-OptionalNoDefault.check = _check_optional
-OptionalNoDefault.apply_default = _dct_noop
-OptionalNoDefault.remove_default = _dct_noop
-Conditional = collections.namedtuple(
-    'Conditional',
-    ('key', 'check_fn', 'condition_key', 'condition_value', 'ensure_absent'),
-)
-Conditional.__new__.__defaults__ = (False,)
-Conditional.check = _get_check_conditional(_check_required)
-Conditional.apply_default = _dct_noop
-Conditional.remove_default = _dct_noop
-ConditionalOptional = collections.namedtuple(
-    'ConditionalOptional',
-    (
-        'key', 'check_fn', 'default', 'condition_key', 'condition_value',
-        'ensure_absent',
+class Required(NamedTuple):
+    key: str
+    check_fn: _Check
+
+    def check(self, dct):
+        return _check_required(self, dct)
+
+    def apply_default(self, dct) -> None:
+        pass
+
+    def remove_default(self, dct) -> None:
+        pass
+
+
+class RequiredRecurse(NamedTuple):
+    key: str
+    schema: _Schema
+
+    @property
+    def check_fn(self):
+        def check_fn(val):
+            validate(val, self.schema)
+        return check_fn
+
+    def check(self, dct):
+        return _check_required(self, dct)
+
+    def apply_default(self, dct):
+        return _apply_default_required_recurse(self, dct)
+
+    def remove_default(self, dct):
+        return _remove_default_required_recurse(self, dct)
+
+
+class Optional(NamedTuple):
+    key: str
+    check_fn: _Check
+    default: object
+
+    def check(self, dct):
+        return _check_optional(self, dct)
+
+    def apply_default(self, dct):
+        return _apply_default_optional(self, dct)
+
+    def remove_default(self, dct):
+        return _remove_default_optional(self, dct)
+
+
+class OptionalRecurse(NamedTuple):
+    key: str
+    schema: _Schema
+    default: object
+
+    @property
+    def check_fn(self):
+        def check_fn(val):
+            validate(val, self.schema)
+        return check_fn
+
+    def check(self, dct) -> None:
+        return _check_optional(self, dct)
+
+    def apply_default(self, dct):
+        return _apply_default_optional_recurse(self, dct)
+
+    def remove_default(self, dct):
+        return _remove_default_optional_recurse(self, dct)
+
+
+class OptionalNoDefault(NamedTuple):
+    key: str
+    check_fn: _Check
+
+    def check(self, dct):
+        return _check_optional(self, dct)
+
+    def apply_default(self, dct):
+        pass
+
+    def remove_default(self, dct):
+        pass
+
+
+class Conditional(NamedTuple):
+    key: str
+    check_fn: _Check
+    condition_key: object
+    condition_value: object
+    ensure_absent: bool = False
+
+    def check(self, dct):
+        return _get_check_conditional(_check_required)(self, dct)
+
+    def apply_default(self, dct):
+        pass
+
+    def remove_default(self, dct):
+        pass
+
+
+class ConditionalOptional(NamedTuple):
+    key: str
+    check_fn: _Check
+    default: object
+    condition_key: object
+    condition_value: object
+    ensure_absent: bool = False
+
+    def check(self, dct):
+        return _get_check_conditional(_check_optional)(self, dct)
+
+    def apply_default(self, dct):
+        return _apply_default_conditional_optional(self, dct)
+
+    def remove_default(self, dct):
+        return _remove_default_conditional_optional(self, dct)
+
+
+class ConditionalRecurse(NamedTuple):
+    key: str
+    schema: _Schema
+    condition_key: object
+    condition_value: object
+    ensure_absent: bool = False
+
+    @property
+    def check_fn(self):
+        def check_fn(val):
+            validate(val, self.schema)
+        return check_fn
+
+    def check(self, dct):
+        return _get_check_conditional(_check_required)(self, dct)
+
+    def apply_default(self, dct):
+        return _apply_default_conditional_recurse(self, dct)
+
+    def remove_default(self, dct):
+        return _remove_default_conditional_recurse(self, dct)
+
+
+class NoAdditionalKeys(NamedTuple):
+    keys: Iterable[str]
+
+    def check(self, dct):
+        return _no_additional_keys_check(self, dct)
+
+    def apply_default(self, dct):
+        pass
+
+    def remove_default(self, dct):
+        pass
+
+
+class WarnAdditionalKeys(NamedTuple):
+    keys: Iterable[str]
+    callback: Callable[..., Any]
+
+    def check(self, dct):
+        return _warn_additional_keys_check(self, dct)
+
+    def apply_default(self, dct):
+        pass
+
+    def remove_default(self, dct):
+        pass
+
+
+class Map(
+    NamedTuple(
+        'Map',
+        (
+            ('object_name', str),
+            ('id_key', TOptional[str]),
+            ('items', Tuple[object, ...]),
+        ),
     ),
-)
-ConditionalOptional.__new__.__defaults__ = (False,)
-ConditionalOptional.check = _get_check_conditional(_check_optional)
-ConditionalOptional.apply_default = _apply_default_conditional_optional
-ConditionalOptional.remove_default = _remove_default_conditional_optional
-ConditionalRecurse = collections.namedtuple(
-    'ConditionalRecurse',
-    ('key', 'schema', 'condition_key', 'condition_value', 'ensure_absent'),
-)
-ConditionalRecurse.__new__.__defaults__ = (False,)
-ConditionalRecurse.check = _get_check_conditional(_check_required)
-ConditionalRecurse.check_fn = _check_fn_recurse
-ConditionalRecurse.apply_default = _apply_default_conditional_recurse
-ConditionalRecurse.remove_default = _remove_default_conditional_recurse
-NoAdditionalKeys = collections.namedtuple('NoAdditionalKeys', ('keys',))
-NoAdditionalKeys.check = _no_additional_keys_check
-NoAdditionalKeys.apply_default = _dct_noop
-NoAdditionalKeys.remove_default = _dct_noop
-WarnAdditionalKeys = collections.namedtuple(
-    'WarnAdditionalKeys', ('keys', 'callback'),
-)
-WarnAdditionalKeys.check = _warn_additional_keys_check
-WarnAdditionalKeys.apply_default = _dct_noop
-WarnAdditionalKeys.remove_default = _dct_noop
-
-
-class Map(collections.namedtuple('Map', ('object_name', 'id_key', 'items'))):
+):
     __slots__ = ()
 
-    def __new__(cls, object_name, id_key, *items):
+    def __new__(cls, object_name: str, id_key: str | None, *items: object):
         return super().__new__(cls, object_name, id_key, items)
 
     def check(self, v):
@@ -258,11 +413,9 @@ class Map(collections.namedtuple('Map', ('object_name', 'id_key', 'items'))):
         return ret
 
 
-class Array(collections.namedtuple('Array', ('of', 'allow_empty'))):
-    __slots__ = ()
-
-    def __new__(cls, of, allow_empty=True):
-        return super().__new__(cls, of=of, allow_empty=allow_empty)
+class Array(NamedTuple):
+    of: _Schema
+    allow_empty: bool = True
 
     def check(self, v):
         check_array(check_any)(v)
@@ -280,39 +433,39 @@ class Array(collections.namedtuple('Array', ('of', 'allow_empty'))):
         return [remove_defaults(val, self.of) for val in v]
 
 
-class Not(collections.namedtuple('Not', ('val',))):
-    __slots__ = ()
+class Not(NamedTuple):
+    val: object
 
     def describe_opposite(self):
         return f'is {self.val!r}'
 
-    def __eq__(self, other):
+    def __eq__(self, other: object):
         return other is not MISSING and other != self.val
 
 
-class NotIn(collections.namedtuple('NotIn', ('values',))):
+class NotIn(NamedTuple('NotIn', (('values', Tuple[object, ...]),))):
     __slots__ = ()
 
-    def __new__(cls, *values):
+    def __new__(cls, *values: object):
         return super().__new__(cls, values=values)
 
-    def describe_opposite(self):
+    def describe_opposite(self) -> str:
         return f'is any of {self.values!r}'
 
-    def __eq__(self, other):
+    def __eq__(self, other: object):
         return other is not MISSING and other not in self.values
 
 
-class In(collections.namedtuple('In', ('values',))):
+class In(NamedTuple('In', (('values', Tuple[object, ...]),))):
     __slots__ = ()
 
-    def __new__(cls, *values):
+    def __new__(cls, *values: object):
         return super().__new__(cls, values=values)
 
-    def describe_opposite(self):
+    def describe_opposite(self) -> str:
         return f'is not any of {self.values!r}'
 
-    def __eq__(self, other):
+    def __eq__(self, other: object):
         return other is not MISSING and other in self.values
 
 
@@ -320,8 +473,8 @@ def check_any(_):
     pass
 
 
-def check_type(tp, typename=None):
-    def check_type_fn(v):
+def check_type(tp: type, typename: str | None = None) -> _Check:
+    def check_type_fn(v: object):
         if not isinstance(v, tp):
             typename_s = typename or tp.__name__
             raise ValidationError(
@@ -337,8 +490,8 @@ check_string = check_type(str, typename='string')
 check_text = check_type(str, typename='text')
 
 
-def check_one_of(possible):
-    def check_one_of_fn(v):
+def check_one_of(possible: Iterable[object]) -> _Check:
+    def check_one_of_fn(v: object) -> None:
         if v not in possible:
             possible_s = ', '.join(str(x) for x in sorted(possible))
             raise ValidationError(
@@ -347,14 +500,14 @@ def check_one_of(possible):
     return check_one_of_fn
 
 
-def check_regex(v):
+def check_regex(v: object) -> None:
     try:
         re.compile(v)
     except re.error:
         raise ValidationError(f'{v!r} is not a valid python regex')
 
 
-def check_array(inner_check):
+def check_array(inner_check: _Check) -> _Check:
     def check_array_fn(v):
         if not isinstance(v, (list, tuple)):
             raise ValidationError(
@@ -367,33 +520,33 @@ def check_array(inner_check):
     return check_array_fn
 
 
-def check_and(*fns):
-    def check(v):
+def check_and(*fns: _Check) -> _Check:
+    def check(v: object) -> None:
         for fn in fns:
             fn(v)
     return check
 
 
-def validate(v, schema):
+def validate(v, schema: _Schema):
     schema.check(v)
     return v
 
 
-def apply_defaults(v, schema):
+def apply_defaults(v, schema: _Schema):
     return schema.apply_defaults(v)
 
 
-def remove_defaults(v, schema):
+def remove_defaults(v, schema: _Schema):
     return schema.remove_defaults(v)
 
 
 def load_from_filename(
-        filename,
-        schema,
-        load_strategy,
-        exc_tp=ValidationError,
+        filename: str,
+        schema: _Schema,
+        load_strategy: Callable[[str], Any],
+        exc_tp: type[Exception] = ValidationError,
         *,
-        display_filename=None,
+        display_filename: str | None = None,
 ):
     display_filename = display_filename or filename
     with reraise_as(exc_tp):
