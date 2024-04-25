@@ -4,5 +4,6 @@
     ],
     "pythonVersion": "3.8",
     "typeCheckingMode": "strict",
-    "reportUnnecessaryTypeIgnoreComment": "warning"
+    "reportUnnecessaryTypeIgnoreComment": "warning",
+    "reportUnnecessaryIsInstance": "information",
 }

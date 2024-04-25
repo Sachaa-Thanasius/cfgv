@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-import os.path
+import os
 import re
 import sys
 from typing import Any
@@ -9,36 +9,39 @@ from typing import Callable
 from typing import Generator
 from typing import Iterable
 from typing import NamedTuple
-from typing import Optional as TOptional
 from typing import overload
 from typing import Protocol
-from typing import Tuple
 from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
     from typing_extensions import Self, TypeAlias
+else:
+    Self = TypeAlias = object
+
+
+StrPath: TypeAlias = 'str | os.PathLike[str]'
 
 
 class _Schema(Protocol):
-    def check(self, v: object) -> None:
+    def check(self, v: Any) -> None:
         ...
 
-    def apply_defaults(self, v: object) -> Any:
+    def apply_defaults(self, v: Any) -> Any:
         ...
 
-    def remove_defaults(self, v: object) -> Any:
+    def remove_defaults(self, v: Any) -> Any:
         ...
 
 
 class _Validator(Protocol):
-    def check(self, dct: object) -> None:
+    def check(self, dct: Any) -> None:
         ...
 
-    def apply_default(self, dct: object) -> Any:
+    def apply_default(self, dct: Any) -> None:
         ...
 
-    def remove_default(self, dct: object) -> Any:
+    def remove_default(self, dct: Any) -> None:
         ...
 
 
@@ -118,31 +121,12 @@ def _check_required(self, dct):
     _check_optional(self, dct)
 
 
-@property
-def _check_fn_recurse(self):
-    def check_fn(val):
-        validate(val, self.schema)
-    return check_fn
-
-
 def _apply_default_required_recurse(self, dct):
     dct[self.key] = apply_defaults(dct[self.key], self.schema)
 
 
 def _remove_default_required_recurse(self, dct):
     dct[self.key] = remove_defaults(dct[self.key], self.schema)
-
-
-def _apply_default_optional_recurse(self, dct):
-    if self.key not in dct:
-        _apply_default_optional(self, dct)
-    _apply_default_required_recurse(self, dct)
-
-
-def _remove_default_optional_recurse(self, dct):
-    if self.key in dct:
-        _remove_default_required_recurse(self, dct)
-        _remove_default_optional(self, dct)
 
 
 def _get_check_conditional(inner):
@@ -164,49 +148,12 @@ def _get_check_conditional(inner):
     return _check_conditional
 
 
-def _apply_default_conditional_optional(self, dct):
-    if dct.get(self.condition_key, MISSING) == self.condition_value:
-        _apply_default_optional(self, dct)
-
-
-def _remove_default_conditional_optional(self, dct):
-    if dct.get(self.condition_key, MISSING) == self.condition_value:
-        _remove_default_optional(self, dct)
-
-
-def _apply_default_conditional_recurse(self, dct):
-    if dct.get(self.condition_key, MISSING) == self.condition_value:
-        _apply_default_required_recurse(self, dct)
-
-
-def _remove_default_conditional_recurse(self, dct):
-    if dct.get(self.condition_key, MISSING) == self.condition_value:
-        _remove_default_required_recurse(self, dct)
-
-
-def _no_additional_keys_check(self, dct):
-    extra = sorted(set(dct) - set(self.keys))
-    if extra:
-        extra_s = ', '.join(str(x) for x in extra)
-        keys_s = ', '.join(str(x) for x in self.keys)
-        raise ValidationError(
-            f'Additional keys found: {extra_s}.  '
-            f'Only these keys are allowed: {keys_s}',
-        )
-
-
-def _warn_additional_keys_check(self, dct):
-    extra = sorted(set(dct) - set(self.keys))
-    if extra:
-        self.callback(extra, self.keys, dct)
-
-
 class Required(NamedTuple):
     key: str
     check_fn: _Check
 
-    def check(self, dct):
-        return _check_required(self, dct)
+    def check(self, dct) -> None:
+        _check_required(self, dct)
 
     def apply_default(self, dct) -> None:
         pass
@@ -220,19 +167,19 @@ class RequiredRecurse(NamedTuple):
     schema: _Schema
 
     @property
-    def check_fn(self):
-        def check_fn(val):
+    def check_fn(self) -> _Check:
+        def check_fn(val: object):
             validate(val, self.schema)
         return check_fn
 
-    def check(self, dct):
-        return _check_required(self, dct)
+    def check(self, dct) -> None:
+        _check_required(self, dct)
 
-    def apply_default(self, dct):
-        return _apply_default_required_recurse(self, dct)
+    def apply_default(self, dct) -> None:
+        _apply_default_required_recurse(self, dct)
 
-    def remove_default(self, dct):
-        return _remove_default_required_recurse(self, dct)
+    def remove_default(self, dct) -> None:
+        _remove_default_required_recurse(self, dct)
 
 
 class Optional(NamedTuple):
@@ -240,14 +187,14 @@ class Optional(NamedTuple):
     check_fn: _Check
     default: object
 
-    def check(self, dct):
-        return _check_optional(self, dct)
+    def check(self, dct) -> None:
+        _check_optional(self, dct)
 
-    def apply_default(self, dct):
-        return _apply_default_optional(self, dct)
+    def apply_default(self, dct) -> None:
+        _apply_default_optional(self, dct)
 
-    def remove_default(self, dct):
-        return _remove_default_optional(self, dct)
+    def remove_default(self, dct) -> None:
+        _remove_default_optional(self, dct)
 
 
 class OptionalRecurse(NamedTuple):
@@ -256,32 +203,36 @@ class OptionalRecurse(NamedTuple):
     default: object
 
     @property
-    def check_fn(self):
-        def check_fn(val):
+    def check_fn(self) -> _Check:
+        def check_fn(val: object):
             validate(val, self.schema)
         return check_fn
 
     def check(self, dct) -> None:
-        return _check_optional(self, dct)
+        _check_optional(self, dct)
 
     def apply_default(self, dct):
-        return _apply_default_optional_recurse(self, dct)
+        if self.key not in dct:
+            _apply_default_optional(self, dct)
+        _apply_default_required_recurse(self, dct)
 
     def remove_default(self, dct):
-        return _remove_default_optional_recurse(self, dct)
+        if self.key in dct:
+            _remove_default_required_recurse(self, dct)
+            _remove_default_optional(self, dct)
 
 
 class OptionalNoDefault(NamedTuple):
     key: str
     check_fn: _Check
 
-    def check(self, dct):
-        return _check_optional(self, dct)
+    def check(self, dct) -> None:
+        _check_optional(self, dct)
 
-    def apply_default(self, dct):
+    def apply_default(self, dct) -> None:
         pass
 
-    def remove_default(self, dct):
+    def remove_default(self, dct) -> None:
         pass
 
 
@@ -292,13 +243,13 @@ class Conditional(NamedTuple):
     condition_value: object
     ensure_absent: bool = False
 
-    def check(self, dct):
-        return _get_check_conditional(_check_required)(self, dct)
+    def check(self, dct) -> None:
+        _get_check_conditional(_check_required)(self, dct)
 
-    def apply_default(self, dct):
+    def apply_default(self, dct) -> None:
         pass
 
-    def remove_default(self, dct):
+    def remove_default(self, dct) -> None:
         pass
 
 
@@ -310,14 +261,16 @@ class ConditionalOptional(NamedTuple):
     condition_value: object
     ensure_absent: bool = False
 
-    def check(self, dct):
-        return _get_check_conditional(_check_optional)(self, dct)
+    def check(self, dct) -> None:
+        _get_check_conditional(_check_optional)(self, dct)
 
-    def apply_default(self, dct):
-        return _apply_default_conditional_optional(self, dct)
+    def apply_default(self, dct) -> None:
+        if dct.get(self.condition_key, MISSING) == self.condition_value:
+            _apply_default_optional(self, dct)
 
-    def remove_default(self, dct):
-        return _remove_default_conditional_optional(self, dct)
+    def remove_default(self, dct) -> None:
+        if dct.get(self.condition_key, MISSING) == self.condition_value:
+            _remove_default_optional(self, dct)
 
 
 class ConditionalRecurse(NamedTuple):
@@ -328,31 +281,40 @@ class ConditionalRecurse(NamedTuple):
     ensure_absent: bool = False
 
     @property
-    def check_fn(self):
-        def check_fn(val):
+    def check_fn(self) -> _Check:
+        def check_fn(val: object):
             validate(val, self.schema)
         return check_fn
 
-    def check(self, dct):
-        return _get_check_conditional(_check_required)(self, dct)
+    def check(self, dct) -> None:
+        _get_check_conditional(_check_required)(self, dct)
 
-    def apply_default(self, dct):
-        return _apply_default_conditional_recurse(self, dct)
+    def apply_default(self, dct) -> None:
+        if dct.get(self.condition_key, MISSING) == self.condition_value:
+            _apply_default_required_recurse(self, dct)
 
-    def remove_default(self, dct):
-        return _remove_default_conditional_recurse(self, dct)
+    def remove_default(self, dct) -> None:
+        if dct.get(self.condition_key, MISSING) == self.condition_value:
+            _remove_default_required_recurse(self, dct)
 
 
 class NoAdditionalKeys(NamedTuple):
     keys: Iterable[str]
 
-    def check(self, dct):
-        return _no_additional_keys_check(self, dct)
+    def check(self, dct) -> None:
+        extra = sorted(set(dct) - set(self.keys))
+        if extra:
+            extra_s = ', '.join(str(x) for x in extra)
+            keys_s = ', '.join(str(x) for x in self.keys)
+            raise ValidationError(
+                f'Additional keys found: {extra_s}.  '
+                f'Only these keys are allowed: {keys_s}',
+            )
 
-    def apply_default(self, dct):
+    def apply_default(self, dct) -> None:
         pass
 
-    def remove_default(self, dct):
+    def remove_default(self, dct) -> None:
         pass
 
 
@@ -360,32 +322,31 @@ class WarnAdditionalKeys(NamedTuple):
     keys: Iterable[str]
     callback: Callable[..., Any]
 
-    def check(self, dct):
-        return _warn_additional_keys_check(self, dct)
+    def check(self, dct) -> None:
+        extra = sorted(set(dct) - set(self.keys))
+        if extra:
+            self.callback(extra, self.keys, dct)
 
-    def apply_default(self, dct):
+    def apply_default(self, dct) -> None:
         pass
 
-    def remove_default(self, dct):
+    def remove_default(self, dct) -> None:
         pass
 
 
-class Map(
-    NamedTuple(
-        'Map',
-        (
-            ('object_name', str),
-            ('id_key', TOptional[str]),
-            ('items', Tuple[object, ...]),
-        ),
-    ),
-):
+class _Map(NamedTuple):
+    object_name: str
+    id_key: str | None
+    items: tuple[_Validator, ...]
+
+
+class Map(_Map):
     __slots__ = ()
 
-    def __new__(cls, object_name: str, id_key: str | None, *items: object):
+    def __new__(cls, object_name: str, id_key: str | None, *items: _Validator):
         return super().__new__(cls, object_name, id_key, items)
 
-    def check(self, v):
+    def check(self, v: dict[str, Any]):
         if not isinstance(v, dict):
             raise ValidationError(
                 f'Expected a {self.object_name} map but got a '
@@ -400,13 +361,13 @@ class Map(
             for item in self.items:
                 item.check(v)
 
-    def apply_defaults(self, v):
+    def apply_defaults(self, v: dict[str, Any]):
         ret = v.copy()
         for item in self.items:
             item.apply_default(ret)
         return ret
 
-    def remove_defaults(self, v):
+    def remove_defaults(self, v: dict[str, Any]):
         ret = v.copy()
         for item in self.items:
             item.remove_default(ret)
@@ -417,7 +378,7 @@ class Array(NamedTuple):
     of: _Schema
     allow_empty: bool = True
 
-    def check(self, v):
+    def check(self, v: list[Any] | tuple[Any, ...]) -> None:
         check_array(check_any)(v)
         if not self.allow_empty and not v:
             raise ValidationError(
@@ -426,24 +387,24 @@ class Array(NamedTuple):
         for val in v:
             validate(val, self.of)
 
-    def apply_defaults(self, v):
+    def apply_defaults(self, v: list[_Validator]):
         return [apply_defaults(val, self.of) for val in v]
 
-    def remove_defaults(self, v):
+    def remove_defaults(self, v: list[_Validator]):
         return [remove_defaults(val, self.of) for val in v]
 
 
 class Not(NamedTuple):
     val: object
 
-    def describe_opposite(self):
+    def describe_opposite(self) -> str:
         return f'is {self.val!r}'
 
     def __eq__(self, other: object):
         return other is not MISSING and other != self.val
 
 
-class NotIn(NamedTuple('NotIn', (('values', Tuple[object, ...]),))):
+class NotIn(NamedTuple('NotIn', (('values', 'tuple[object, ...]'),))):
     __slots__ = ()
 
     def __new__(cls, *values: object):
@@ -456,7 +417,7 @@ class NotIn(NamedTuple('NotIn', (('values', Tuple[object, ...]),))):
         return other is not MISSING and other not in self.values
 
 
-class In(NamedTuple('In', (('values', Tuple[object, ...]),))):
+class In(NamedTuple('In', (('values', 'tuple[object, ...]'),))):
     __slots__ = ()
 
     def __new__(cls, *values: object):
@@ -469,7 +430,7 @@ class In(NamedTuple('In', (('values', Tuple[object, ...]),))):
         return other is not MISSING and other in self.values
 
 
-def check_any(_):
+def check_any(_: object) -> None:
     pass
 
 
@@ -490,8 +451,8 @@ check_string = check_type(str, typename='string')
 check_text = check_type(str, typename='text')
 
 
-def check_one_of(possible: Iterable[object]) -> _Check:
-    def check_one_of_fn(v: object) -> None:
+def check_one_of(possible: Iterable[Any]) -> _Check:
+    def check_one_of_fn(v: Any) -> None:
         if v not in possible:
             possible_s = ', '.join(str(x) for x in sorted(possible))
             raise ValidationError(
@@ -508,7 +469,7 @@ def check_regex(v: object) -> None:
 
 
 def check_array(inner_check: _Check) -> _Check:
-    def check_array_fn(v):
+    def check_array_fn(v: list[Any] | tuple[Any, ...]) -> None:
         if not isinstance(v, (list, tuple)):
             raise ValidationError(
                 f'Expected array but got {type(v).__name__!r}',
@@ -527,26 +488,26 @@ def check_and(*fns: _Check) -> _Check:
     return check
 
 
-def validate(v, schema: _Schema):
+def validate(v: Any, schema: _Schema):
     schema.check(v)
     return v
 
 
-def apply_defaults(v, schema: _Schema):
+def apply_defaults(v: Any, schema: _Schema):
     return schema.apply_defaults(v)
 
 
-def remove_defaults(v, schema: _Schema):
+def remove_defaults(v: Any, schema: _Schema):
     return schema.remove_defaults(v)
 
 
 def load_from_filename(
-        filename: str,
+        filename: StrPath,
         schema: _Schema,
         load_strategy: Callable[[str], Any],
         exc_tp: type[Exception] = ValidationError,
         *,
-        display_filename: str | None = None,
+        display_filename: StrPath | None = None,
 ):
     display_filename = display_filename or filename
     with reraise_as(exc_tp):
