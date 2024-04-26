@@ -15,9 +15,16 @@ from typing import TypeVar
 
 
 if TYPE_CHECKING:
-    from typing_extensions import Self, TypeAlias
+    from typing_extensions import Self
+    from typing_extensions import TypeAlias
 else:
-    Self = TypeAlias = object
+
+    class Self:
+        pass
+
+    class TypeAlias:
+        pass
+
 
 T = TypeVar('T')
 _StrPath: TypeAlias = 'str | os.PathLike[str]'
@@ -114,11 +121,11 @@ def _check_required(self, dct: dict[Any, Any]) -> None:
     _check_optional(self, dct)
 
 
-def _apply_default_required_recurse(self, dct):
+def _apply_default_required_recurse(self, dct: dict[Any, Any]):
     dct[self.key] = apply_defaults(dct[self.key], self.schema)
 
 
-def _remove_default_required_recurse(self, dct):
+def _remove_default_required_recurse(self, dct: dict[Any, Any]):
     dct[self.key] = remove_defaults(dct[self.key], self.schema)
 
 
