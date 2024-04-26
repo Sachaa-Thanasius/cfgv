@@ -151,7 +151,7 @@ def _get_check_conditional(
 
 
 class Required(NamedTuple):
-    key: str
+    key: object
     check_fn: Check
 
     def check(self, dct: dict[Any, Any]) -> None:
@@ -165,7 +165,7 @@ class Required(NamedTuple):
 
 
 class RequiredRecurse(NamedTuple):
-    key: str
+    key: object
     schema: Schema
 
     @property
@@ -185,7 +185,7 @@ class RequiredRecurse(NamedTuple):
 
 
 class Optional(NamedTuple):
-    key: str
+    key: object
     check_fn: Check
     default: object
 
@@ -200,7 +200,7 @@ class Optional(NamedTuple):
 
 
 class OptionalRecurse(NamedTuple):
-    key: str
+    key: object
     schema: Schema
     default: object
 
@@ -225,7 +225,7 @@ class OptionalRecurse(NamedTuple):
 
 
 class OptionalNoDefault(NamedTuple):
-    key: str
+    key: object
     check_fn: Check
 
     def check(self, dct: dict[Any, Any]) -> None:
@@ -239,7 +239,7 @@ class OptionalNoDefault(NamedTuple):
 
 
 class Conditional(NamedTuple):
-    key: str
+    key: object
     check_fn: Check
     condition_key: object
     condition_value: object
@@ -256,7 +256,7 @@ class Conditional(NamedTuple):
 
 
 class ConditionalOptional(NamedTuple):
-    key: str
+    key: object
     check_fn: Check
     default: object
     condition_key: object
@@ -276,7 +276,7 @@ class ConditionalOptional(NamedTuple):
 
 
 class ConditionalRecurse(NamedTuple):
-    key: str
+    key: object
     schema: Schema
     condition_key: object
     condition_value: object
@@ -301,7 +301,7 @@ class ConditionalRecurse(NamedTuple):
 
 
 class NoAdditionalKeys(NamedTuple):
-    keys: Iterable[str]
+    keys: Iterable[object]
 
     def check(self, dct: dict[Any, Any]) -> None:
         extra = sorted(set(dct) - set(self.keys))
@@ -321,7 +321,7 @@ class NoAdditionalKeys(NamedTuple):
 
 
 class WarnAdditionalKeys(NamedTuple):
-    keys: Iterable[str]
+    keys: Iterable[object]
     callback: Callable[..., Any]
 
     def check(self, dct: dict[Any, Any]) -> None:
